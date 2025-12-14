@@ -2,7 +2,7 @@
 members = [".", "enumwow_helpers"]
 
 [package]
-name = "enumwow"
+name = "zenum"
 version = "0.0.0-reserved"
 edition = "2024"
 

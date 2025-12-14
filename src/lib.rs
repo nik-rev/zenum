@@ -4,6 +4,8 @@
 #![feature(const_option_ops)]
 #![feature(const_trait_impl)]
 #![feature(const_cmp)]
+#![allow(macro_expanded_macro_exports_accessed_by_absolute_paths)]
+#![allow(clippy::crate_in_macro_def, reason = "clippy bug")]
 //
 #![feature(macro_derive)]
 #![feature(macro_attr)]
@@ -56,6 +58,107 @@ pub mod private {
     pub use const_format;
 }
 
+/// A meta-macro that generates an attribute parsing macro (like `extract_field`).
+///
+/// It takes a name for the generated macro, a helper attribute name (like `zenum`),
+/// and a list of allowed attributes to parse.
+///
+/// Usage:
+/// ```ignore
+/// $crate::define_extract_macro! {
+///     extract_field,
+///     zenum,
+///     [
+///         // Value attributes (name = $value:expr)
+///         rename_all, rename, aliases,
+///
+///         // Flag attributes (name)
+///         disabled
+///     ]
+/// }
+/// ```
+#[macro_export]
+macro_rules! define_extract_macro {
+    (
+        // Escaped `$`, same as `$$` which is currently nightly
+        $_:tt
+        // the `macro_rules!` to generate
+        macro_rules! $macro_name:ident;
+
+        match ? in #[$helper_attr_name:ident(?)] {
+            $(
+                { $value_ident:ident $($value:tt)* } => { $($captured:tt)* }
+            )*
+        }
+    ) => {
+        #[doc(hidden)]
+        #[macro_export]
+        macro_rules! $macro_name {
+            // Entry point. \$_ _ field is the field we're looking for in the list of #[$_ _ attr]ibutes
+            ($_ field:ident: $_ (#[$_ ($_ attr:tt)*])*) => {
+                $_ (
+                    // Try to extract from each individual `#[attr]`
+                    if let Some(val) = $_ crate::$macro_name!(@ $_ field: $_ ($_ attr)*) {
+                        Some(val)
+                    } else
+                )* {
+                    None
+                }
+            };
+            // We only want to parse this part
+            //
+            // #[zenum(rename_all = "kebab-case")]
+            //         ^^^^^^^^^^^^^^^^^^^^^^^^^
+            (@ $_ field:ident: $helper_attr_name($_ ($_ attr:tt)*)) => { $_ crate::$macro_name!(! $_ field: $_ ($_ attr)*) };
+            // Any other field is totally ignored, e.g. `#[serde(rename_all = "kebab-case")]`
+            (@ $_ field:ident: $_ ($_ ignore:tt)*) => { None };
+            //
+            // SUPPORTED FIELDS, AND what we are looking for
+            //
+            $(
+                // this value is at the start or in the middle of the input
+                (! $value_ident: $value_ident $($value)*, $_ ($_ attr:tt)+) => { Some($($captured)*) };
+                // this value is at the end of the input
+                (! $value_ident: $value_ident $($value)* $_ (,)?) => { Some($($captured)*) };
+            )*
+            //
+            // SUPPORTED FIELDS, not what we are looking for
+            //
+            $(
+                // this value is at the start or in the middle of the input
+                (! $_ field:ident: $value_ident $($value)*, $_ ($_ attr:tt)+) => { $_ crate::$macro_name!(! $_ field: $_ ($_ attr)+) };
+                // this value is at the end of the input
+                (! $_ field:ident: $value_ident $($value)* $_ (,)?) => { None };
+            )*
+            //
+            // CATCHALL: if we go here, it's an error. Unrecognized token
+            //
+            (! $_ field:ident: $_ ignore:ident $_ ($_ attr:tt)*) => {
+                compile_error!(concat!(
+                    "unexpected token: `",
+                    stringify!($_ ignore),
+                    "`, allowed `#[zenum(/* ... */)]` arguments are:\n",
+                    $(
+                        "• ", "`",  stringify!($value_ident $($value)*), "`\n",
+                    )*
+                ))
+            };
+        }
+    };
+}
+
+define_extract_macro! {$
+    macro_rules! extract_field;
+
+    match ? in #[zenum(?)] {
+        { rename_all = $value:expr } => { $value }
+        { disabled } => { () }
+        { rename = $value:expr } => { $value }
+        { aliases = $value:expr } => { $value }
+    }
+}
+
+#[cfg(false)]
 /// Takes a bunch of attributes, and finds the first field in our helper macro
 ///
 /// For example, a valid input to this macro is this:
@@ -76,7 +179,7 @@ pub mod private {
 #[macro_export]
 macro_rules! extract_field {
     // Entry point. $field is the field we're looking for in the list of #[$attr]ibutes
-    ($field:ident: $(#[$($attr:tt)*])*) => {{
+    ($field:ident: $(#[$($attr:tt)*])*) => {
         $(
             // Try to extract from each individual `#[attr]`
             if let Some(val) = $crate::extract_field!(@ $field: $($attr)*) {
@@ -85,14 +188,12 @@ macro_rules! extract_field {
         )* {
             None
         }
-    }};
+    };
     // We only want to parse this part
     //
     // #[zenum(rename_all = "kebab-case")]
     //         ^^^^^^^^^^^^^^^^^^^^^^^^^
-    (@ $field:ident: zenum($($attr:tt)*)) => {
-        $crate::extract_field!(! $field: $($attr)*)
-    };
+    (@ $field:ident: zenum($($attr:tt)*)) => { $crate::extract_field!(! $field: $($attr)*) };
     // Any other field is totally ignored, e.g. `#[serde(rename_all = "kebab-case")]`
     (@ $field:ident: $($ignore:tt)*) => { None };
     //
@@ -101,24 +202,28 @@ macro_rules! extract_field {
     // odd = this value is at the start or in the middle of the input
     // even = this value is at the end of the input
     //
-    (! rename_all: rename_all = $value:literal, $($attr:tt)+) => { Some($value) };
-    (! rename_all: rename_all = $value:literal $(,)?) => { Some($value) };
+    (! rename_all: rename_all = $value:expr, $($attr:tt)+) => { Some($value) };
+    (! rename_all: rename_all = $value:expr $(,)?) => { Some($value) };
     (! disabled: disabled, $($attr:tt)+) => { Some(()) };
     (! disabled: disabled $(,)?) => { Some(()) };
-    (! rename: rename = $value:literal, $($attr:tt)+) => { Some($value) };
-    (! rename: rename = $value:literal $(,)?) => { Some($value) };
+    (! rename: rename = $value:expr, $($attr:tt)+) => { Some($value) };
+    (! rename: rename = $value:expr $(,)?) => { Some($value) };
+    (! aliases: aliases = $value:expr, $($attr:tt)+) => { Some($value) };
+    (! aliases: aliases = $value:expr $(,)?) => { Some($value) };
     //
     // SUPPORTED FIELDS, not what we are looking for
     //
     // odd = this value is at the start or in the middle of the input
     // even = this value is at the end of the input
     //
-    (! $field:ident: rename_all = $value:literal, $($attr:tt)+) => { $crate::extract_field!(! $field: $($attr)+) };
-    (! $field:ident: rename_all = $value:literal $(,)?) => { None };
+    (! $field:ident: rename_all = $value:expr, $($attr:tt)+) => { $crate::extract_field!(! $field: $($attr)+) };
+    (! $field:ident: rename_all = $value:expr $(,)?) => { None };
     (! $field:ident: disabled, $($attr:tt)+) => { $crate::extract_field!(! $field: $($attr)*) };
     (! $field:ident: disabled $(,)?) => { None };
-    (! $field:ident: rename = $value:literal, $($attr:tt)+) => { $crate::extract_field!(! $field: $($attr)+) };
-    (! $field:ident: rename = $value:literal $(,)?) => { None };
+    (! $field:ident: rename = $value:expr, $($attr:tt)+) => { $crate::extract_field!(! $field: $($attr)+) };
+    (! $field:ident: rename = $value:expr $(,)?) => { None };
+    (! $field:ident: aliases = $value:expr, $($attr:tt)+) => { $crate::extract_field!(! $field: $($attr)+) };
+    (! $field:ident: aliases = $value:expr $(,)?) => { None };
     //
     // CATCHALL: if we go here, it's an error. Unrecognized token
     //
@@ -127,9 +232,10 @@ macro_rules! extract_field {
             "unexpected token: `",
             stringify!($ignore),
             "`, allowed `#[zenum(/* ... */)]` arguments are:\n",
-            "• `rename_all = $value:literal`\n",
+            "• `rename_all = $_:expr`\n",
             "• `disabled`\n",
-            "• `rename = $value:literal`\n"
+            "• `rename = $_:expr`\n"
+            "• `aliases = $_:expr`\n"
         ))
     };
 }
