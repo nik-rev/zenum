@@ -1,0 +1,61 @@
+#[macro_export]
+macro_rules! Display {
+    derive() (
+    // <enum_parse: start>
+        $(#[$($enum_attr:tt)*])*
+        $enum_vis:vis enum $enum_ident:ident
+            // a best-effort parsing of generics
+            //
+            // what's missing:
+            //
+            // - more than 1 lifetime bound (e.g. 'a: 'b + 'c)
+            // - more than 1 trait bound (e.g. T: A + B + C)
+            // - support for "use" TypeParam in trait bounds
+            // - `const` type parameters are totally unsupported
+            // - `for<..>` lifetimes in `where` clause
+            $(<
+                $(
+                    $(#[$($type_param_attr:tt)*])*
+                    // lifetime parameter
+                    $($type_param_lifetime:lifetime $(: $type_param_lifetime_super:lifetime)?)?
+                    // type parameter
+                    $($type_param_type:ident
+                        $(:
+                            $($type_param_lifetime_bound:lifetime)?
+                            $($type_param_type_bound:path)?
+                        )? $(= $type_param_default:ty)?
+                    )?
+                ),*
+                $(,)?
+            >)?
+            $(where $(
+                $($where_lifetime:lifetime: $where_lifetime_bounds:lifetime)?
+                $($where_type_param_ty:ty: $where_type_param_bounds:path)?
+            ),*)?
+        {
+            $(
+                $(#[$($enum_variant_attr:tt)*])*
+                $enum_variant:ident
+                    // enum with named fields
+                    $({
+                        $(
+                            $(#[$($enum_variant_named_field_attr:tt)*])*
+                            $enum_variant_named_field_ident:ident: $enum_variant_named_field_ty:ty
+                        ),* $(,)?
+                    })?
+                    // enum with unnamed fields
+                    $((
+                        $(
+                            $(#[$($enum_variant_unnamed_field_attr:tt)*])*
+                            $enum_variant_unnamed_field_ty:ty
+                        ),* $(,)?
+                    ))?
+                    // discriminant
+                    $(= $enum_variant_discriminant:expr)?
+            ),* $(,)?
+        }
+    // <enum_parse: end>
+    ) => {
+
+    };
+}

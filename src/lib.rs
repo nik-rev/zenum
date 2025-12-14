@@ -38,22 +38,22 @@
 //!   was generic over any of `strum`'s traits, so instead we add the respective
 //!   items as associated constants/functions
 
+mod as_variant;
+mod display;
+mod enum_iter;
+mod enum_kind;
+mod expect_variant;
+mod from_str;
+mod is_variant;
+mod map_variant;
+mod unwrap_variant;
+mod variant_count;
+mod variant_names;
+
+// Not public API.
+#[doc(hidden)]
 pub mod private {
     pub use const_format;
-}
-
-fn lol(s: &str) {
-    const X: &str = {
-        match "x" {
-            "a" => "z",
-            "b" => "y",
-            _ => "m",
-        }
-    };
-    match s {
-        X => (),
-        _ => todo!(),
-    }
 }
 
 /// Takes a bunch of attributes, and finds the given field
@@ -98,109 +98,9 @@ macro_rules! extract_field {
     (! $field:ident,) => { None };
 }
 
-macro_rules! EnumString {
-    derive() (
-        $(#[$($enum_attr:tt)*])*
-        $enum_vis:vis enum $enum_ident:ident {
-            $(
-                $(#[$($enum_variant_attr:tt)*])*
-                $enum_variant:ident
-                    // enum with named fields
-                    $({
-                        $(
-                            $(#[$($enum_variant_named_field_attr:tt)*])*
-                            $enum_variant_named_field_ident:ident: $enum_variant_named_field_ty:ty
-                        ),* $(,)?
-                    })?
-                    // enum with unnamed fields
-                    $((
-                        $(
-                            $(#[$($enum_variant_unnamed_field_attr:tt)*])*
-                            $enum_variant_unnamed_field_ty:ty
-                        ),* $(,)?
-                    ))?
-                    // discriminant
-                    $(= $enum_variant_discriminant:expr)?
-            ),* $(,)?
-        }
-    ) => {
-        impl ::core::str::FromStr for $enum_ident {
-            type Err = ();
+pub use enumwow_helpers::dummy;
 
-            fn from_str(s: &::core::primitive::str) -> ::core::result::Result<Self, Self::Err> {
-                const STREN_RENAME_ALL: Option<$crate::private::const_format::Case> = {
-                    match $crate::extract_field!(rename_all, $(#[$($enum_attr)*])*) {
-                        Some("lowercase") => Some($crate::private::const_format::Case::Lower),
-                        Some("UPPERCASE") => Some($crate::private::const_format::Case::Upper),
-                        Some("PascalCase") => Some($crate::private::const_format::Case::Pascal),
-                        Some("camelCase") => Some($crate::private::const_format::Case::Camel),
-                        Some("snake_case") => Some($crate::private::const_format::Case::Snake),
-                        Some("SCREAMING_SNAKE_CASE") => Some($crate::private::const_format::Case::UpperSnake),
-                        Some("kebab-case") => Some($crate::private::const_format::Case::Kebab),
-                        Some("SCREAMING-KEBAB-CASE") => Some($crate::private::const_format::Case::UpperKebab),
-                        Some(unknown) => panic!("invalid value for `#[stren(rename_all_fields)]`"),
-                        None => None
-                    }
-                };
-                $(
-                    #[allow(non_upper_case_globals)]
-                    const $enum_variant: (&str, bool) = {
-                        const FIELD_STR: &str = stringify!($enum_ident);
-
-                        let rename: Option<&str> = $crate::extract_field!(rename, $(#[$($enum_variant_attr)*])*);
-
-                        // actual string representation of the enum variant
-                        let name = if let Some(rename) = rename {
-                            // supplied #[stren(rename = "blabla")]
-                            rename
-                        } else if STREN_RENAME_ALL.is_some() {
-                            // Apply "rename-all" rule to this string
-
-                            // this is very bad, we have to do it like this because `if let Some(s) = Y` with `s`
-                            // cannot be used in a `const` context
-                            //
-                            // Apparently every single branch gets evaluated in `const`, so we must make it always compile.
-                            // The `or` path will never actually be taken
-                            $crate::private::const_format::map_ascii_case!(STREN_RENAME_ALL.unwrap_or($crate::private::const_format::Case::Lower), FIELD_STR)
-                        } else {
-                            // default to stringified name of the enum variant
-                            FIELD_STR
-                        };
-                        let is_disabled: Option<()> = $crate::extract_field!(disabled, $(#[$($enum_variant_attr)*])*);
-
-                        (name, is_disabled.is_some())
-                    };
-                )*
-                match s {
-                    $(
-                        v if v == $enum_variant.0
-                        // not #[stren(disabled)]
-                        && !$enum_variant.1 => Ok(Self::$enum_variant
-                            // enum with named fields
-                            $({
-                                $(
-                                    $enum_variant_named_field_ident:
-                                    <$enum_variant_named_field_ty as ::core::default::Default>::default(),
-                                )*
-                            })?
-                            // enum with unnamed fields
-                            $((
-                                $(
-                                    <$enum_variant_unnamed_field_ty as ::core::default::Default>::default(),
-                                )*
-                            ))?
-                        ),
-                    )*
-                    _ => Err(())
-                }
-            }
-        }
-    };
-}
-
-use struz_helpers::dummy;
-
-#[derive(Debug, PartialEq, EnumString, dummy)]
+#[derive(Debug, PartialEq, FromStr, dummy)]
 enum Color {
     Red,
     // The Default value will be inserted into range if we match "Green".
