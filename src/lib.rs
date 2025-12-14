@@ -55,6 +55,8 @@ mod variant_names;
 // Not public API.
 #[doc(hidden)]
 pub mod private {
+    pub use None;
+    pub use Some;
     pub use const_format;
 }
 
@@ -98,11 +100,11 @@ macro_rules! define_extract_macro {
             ($_ field:ident: $_ (#[$_ ($_ attr:tt)*])*) => {
                 $_ (
                     // Try to extract from each individual `#[attr]`
-                    if let Some(val) = $_ crate::$macro_name!(@ $_ field: $_ ($_ attr)*) {
-                        Some(val)
+                    if let $_ crate::private::Some(val) = $_ crate::$macro_name!(@ $_ field: $_ ($_ attr)*) {
+                        $_ crate::private::Some(val)
                     } else
                 )* {
-                    None
+                    $_ crate::private::None
                 }
             };
             // We only want to parse this part
@@ -111,15 +113,15 @@ macro_rules! define_extract_macro {
             //         ^^^^^^^^^^^^^^^^^^^^^^^^^
             (@ $_ field:ident: $helper_attr_name($_ ($_ attr:tt)*)) => { $_ crate::$macro_name!(! $_ field: $_ ($_ attr)*) };
             // Any other field is totally ignored, e.g. `#[serde(rename_all = "kebab-case")]`
-            (@ $_ field:ident: $_ ($_ ignore:tt)*) => { None };
+            (@ $_ field:ident: $_ ($_ ignore:tt)*) => { $_ crate::private::None };
             //
             // SUPPORTED FIELDS, AND what we are looking for
             //
             $(
                 // this value is at the start or in the middle of the input
-                (! $value_ident: $value_ident $($value)*, $_ ($_ attr:tt)+) => { Some($($captured)*) };
+                (! $value_ident: $value_ident $($value)*, $_ ($_ attr:tt)+) => { $_ crate::private::Some($($captured)*) };
                 // this value is at the end of the input
-                (! $value_ident: $value_ident $($value)* $_ (,)?) => { Some($($captured)*) };
+                (! $value_ident: $value_ident $($value)* $_ (,)?) => { $_ crate::private::Some($($captured)*) };
             )*
             //
             // SUPPORTED FIELDS, not what we are looking for
@@ -128,7 +130,7 @@ macro_rules! define_extract_macro {
                 // this value is at the start or in the middle of the input
                 (! $_ field:ident: $value_ident $($value)*, $_ ($_ attr:tt)+) => { $_ crate::$macro_name!(! $_ field: $_ ($_ attr)+) };
                 // this value is at the end of the input
-                (! $_ field:ident: $value_ident $($value)* $_ (,)?) => { None };
+                (! $_ field:ident: $value_ident $($value)* $_ (,)?) => { $_ crate::private::None };
             )*
             //
             // CATCHALL: if we go here, it's an error. Unrecognized token
@@ -137,7 +139,7 @@ macro_rules! define_extract_macro {
                 compile_error!(concat!(
                     "unexpected token: `",
                     stringify!($_ ignore),
-                    "`, allowed `#[zenum(/* ... */)]` arguments are:\n",
+                    "`, allowed `#[", stringify!($macro_name), "(/* ... */)]` arguments are:\n",
                     $(
                         "• ", "`",  stringify!($value_ident $($value)*), "`\n",
                     )*
