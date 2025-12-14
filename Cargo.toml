@@ -1,11 +1,11 @@
 [workspace]
-members = [".", "struz_helpers"]
+members = [".", "enumwow_helpers"]
 
 [package]
-name = "struz"
-version = "0.1.0"
+name = "enumwow"
+version = "0.0.0-reserved"
 edition = "2024"
 
 [dependencies]
-struz_helpers = { path = "struz_helpers" }
+enumwow_helpers = { path = "enumwow_helpers" }
 const_format = "0.2"

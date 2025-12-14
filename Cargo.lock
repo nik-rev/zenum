@@ -23,6 +23,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "enumwow"
+version = "0.0.0-reserved"
+dependencies = [
+ "const_format",
+ "enumwow_helpers",
+]
+
+[[package]]
+name = "enumwow_helpers"
+version = "0.1.0"
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -39,18 +51,6 @@ checksum = "a338cc41d27e6cc6dce6cefc13a0729dfbb81c262b1f519331575dd80ef3067f"
 dependencies = [
  "proc-macro2",
 ]
-
-[[package]]
-name = "struz"
-version = "0.1.0"
-dependencies = [
- "const_format",
- "struz_helpers",
-]
-
-[[package]]
-name = "struz_helpers"
-version = "0.1.0"
 
 [[package]]
 name = "unicode-ident"
