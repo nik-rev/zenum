@@ -56,46 +56,82 @@ pub mod private {
     pub use const_format;
 }
 
-/// Takes a bunch of attributes, and finds the given field
+/// Takes a bunch of attributes, and finds the first field in our helper macro
 ///
 /// For example, a valid input to this macro is this:
 ///
 /// ```ignore
 /// #[foo]
 /// #[bar]
-/// #[stren(rename_all = "kebab-case")]
+/// #[zenum(rename_all = "kebab-case")]
 /// #[baz]
 /// ```
 ///
 /// It will then find the first `rename_all` attribute that it finds, and
 /// evaluate to its value, in this case `"kebab-case"`
+//
+// NOTE: We could generate this macro with a macro, to reduce boilerplate when adding new fields
+// but I don't think it would be worth it in terms of readability
 #[doc(hidden)]
 #[macro_export]
 macro_rules! extract_field {
-    ($field:ident, $(#[$($attr:tt)*])*) => {{
+    // Entry point. $field is the field we're looking for in the list of #[$attr]ibutes
+    ($field:ident: $(#[$($attr:tt)*])*) => {{
         $(
-            if let Some(val) = $crate::extract_field!(@ $field, $($attr)*) {
+            // Try to extract from each individual `#[attr]`
+            if let Some(val) = $crate::extract_field!(@ $field: $($attr)*) {
                 Some(val)
             } else
         )* {
             None
         }
     }};
-    (@ $field:ident, stren($($attr:tt)*)) => {
-        $crate::extract_field!(! $field, $($attr)*)
+    // We only want to parse this part
+    //
+    // #[zenum(rename_all = "kebab-case")]
+    //         ^^^^^^^^^^^^^^^^^^^^^^^^^
+    (@ $field:ident: zenum($($attr:tt)*)) => {
+        $crate::extract_field!(! $field: $($attr)*)
     };
-    (@ $field:ident, $($ignore:tt)*) => {};
+    // Any other field is totally ignored, e.g. `#[serde(rename_all = "kebab-case")]`
+    (@ $field:ident: $($ignore:tt)*) => { None };
     //
-    // SUPPORTED FIELDS
+    // SUPPORTED FIELDS, AND what we are looking for
     //
-    (! rename_all, rename_all = $value:literal $($attr:tt)*) => { Some($value) };
-    (! disabled, disabled $($attr:tt)*) => { Some(()) };
-    (! rename, rename = $value:literal $($attr:tt)*) => { Some($value) };
+    // odd = this value is at the start or in the middle of the input
+    // even = this value is at the end of the input
     //
-    (! $field:ident, $ignore:tt $($attr:tt)*) => {
-        $crate::extract_field!(! $field, $($attr)*)
+    (! rename_all: rename_all = $value:literal, $($attr:tt)+) => { Some($value) };
+    (! rename_all: rename_all = $value:literal $(,)?) => { Some($value) };
+    (! disabled: disabled, $($attr:tt)+) => { Some(()) };
+    (! disabled: disabled $(,)?) => { Some(()) };
+    (! rename: rename = $value:literal, $($attr:tt)+) => { Some($value) };
+    (! rename: rename = $value:literal $(,)?) => { Some($value) };
+    //
+    // SUPPORTED FIELDS, not what we are looking for
+    //
+    // odd = this value is at the start or in the middle of the input
+    // even = this value is at the end of the input
+    //
+    (! $field:ident: rename_all = $value:literal, $($attr:tt)+) => { $crate::extract_field!(! $field: $($attr)+) };
+    (! $field:ident: rename_all = $value:literal $(,)?) => { None };
+    (! $field:ident: disabled, $($attr:tt)+) => { $crate::extract_field!(! $field: $($attr)*) };
+    (! $field:ident: disabled $(,)?) => { None };
+    (! $field:ident: rename = $value:literal, $($attr:tt)+) => { $crate::extract_field!(! $field: $($attr)+) };
+    (! $field:ident: rename = $value:literal $(,)?) => { None };
+    //
+    // CATCHALL: if we go here, it's an error. Unrecognized token
+    //
+    (! $field:ident: $ignore:ident $($attr:tt)*) => {
+        compile_error!(concat!(
+            "unexpected token: `",
+            stringify!($ignore),
+            "`, allowed `#[zenum(/* ... */)]` arguments are:\n",
+            "• `rename_all = $value:literal`\n",
+            "• `disabled`\n",
+            "• `rename = $value:literal`\n"
+        ))
     };
-    (! $field:ident,) => { None };
 }
 
 pub use enumwow_helpers::dummy;
@@ -109,15 +145,15 @@ enum Color {
     },
 
     // We can match on multiple different patterns.
-    #[stren(serialize = "blue", serialize = "b")]
+    // #[stren(serialize = "blue", serialize = "b")]
     Blue(usize),
 
     // Notice that we can disable certain variants from being found
-    #[stren(disabled)]
+    #[zenum(disabled)]
     Yellow,
 
     // We can make the comparison case insensitive (however Unicode is not supported at the moment)
-    #[stren(ascii_case_insensitive)]
+    // #[stren(ascii_case_insensitive)]
     Black,
 }
 

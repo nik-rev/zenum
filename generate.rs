@@ -45,7 +45,7 @@ impl Marker {
             Self::RenameAll => {
                 r#"
 const STREN_RENAME_ALL: Option<$crate::private::const_format::Case> = {
-    match $crate::extract_field!(rename_all, $(#[$($enum_attr)*])*) {
+    match $crate::extract_field!(rename_all: $(#[$($enum_attr)*])*) {
         Some("lowercase") => Some($crate::private::const_format::Case::Lower),
         Some("UPPERCASE") => Some($crate::private::const_format::Case::Upper),
         Some("PascalCase") => Some($crate::private::const_format::Case::Pascal),
