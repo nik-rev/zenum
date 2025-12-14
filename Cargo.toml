@@ -1,0 +1,11 @@
+[workspace]
+members = [".", "struz_helpers"]
+
+[package]
+name = "struz"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+struz_helpers = { path = "struz_helpers" }
+const_format = "0.2"

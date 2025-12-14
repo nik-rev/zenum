@@ -1,0 +1,10 @@
+toolchain.channel = "nightly-2025-12-11"
+toolchain.components = [
+  "rust-analyzer",
+  "cargo",
+  "rustfmt",
+  "clippy",
+  "rustc",
+  "rust-src",
+  "rustc-codegen-cranelift-preview"
+]
