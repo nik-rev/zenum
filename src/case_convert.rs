@@ -43,23 +43,43 @@ pub enum Case {
     ScreamingKebab,
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __case_from_string_literal {
+    ($lit:literal) => {
+        const {
+            match $lit {
+                _ if $crate::private::const_str::equal!("lowercase", $lit) => $crate::Case::Lower,
+                _ if $crate::private::const_str::equal!("UPPERCASE", $lit) => $crate::Case::Upper,
+                _ if $crate::private::const_str::equal!("camelCase", $lit) => $crate::Case::Camel,
+                _ if $crate::private::const_str::equal!("PascalCase", $lit) => $crate::Case::Pascal,
+                _ if $crate::private::const_str::equal!("snake_case", $lit) => $crate::Case::Snake,
+                _ if $crate::private::const_str::equal!("SCREAMING_SNAKE_CASE", $lit) => $crate::Case::ScreamingSnake,
+                _ if $crate::private::const_str::equal!("kebab-case", $lit) => $crate::Case::Kebab,
+                _ if $crate::private::const_str::equal!("SCREAMING-KEBAB-CASE", $lit) => $crate::Case::ScreamingKebab,
+                _ => panic!(r#"invalid value for `#[zenum(rename_all = "...")]`, expected one of: "lowercase", "UPPERCASE", "camelCase", "PascalCase", "snake_case", "SCREAMING_SNAKE_CASE", "kebab-case" or "SCREAMING-KEBAB-CASE""#),
+            }
+        }
+    };
+    // Custom case that the user chose, e.g. `const CASE = Case::Snake`
+    ($expr:expr) => {
+        $expr
+    };
+}
+
 #[macro_export]
 macro_rules! map_ascii_case {
     ($case:expr, $str:expr) => {
         $crate::private::identity::<&'static str>({
-            const CASE: $crate::Case = $case;
-            const STR: &$crate::private::str = $str;
-            {
-                const L: $crate::private::usize = CASE.size_after_conversion(STR);
+            const L: $crate::private::usize = $case.size_after_conversion($str);
 
-                const BYTES: &[$crate::private::u8; L] =
-                    &$crate::private::case_convert::convert_str::<L>(CASE, STR);
+            const BYTES: &[$crate::private::u8; L] =
+                &$crate::private::case_convert::convert_str::<L>($case, $str);
 
-                const STR_2: &$crate::private::str =
-                    unsafe { $crate::private::str::from_utf8_unchecked(BYTES) };
+            const STR: &$crate::private::str =
+                unsafe { $crate::private::str::from_utf8_unchecked(BYTES) };
 
-                STR_2
-            }
+            STR
         })
     };
 }

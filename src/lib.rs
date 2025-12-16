@@ -1,14 +1,12 @@
 // This is needed only for optimizations.
 // We could run this at runtime instead and the compiler would probably optimize it. but
 // also probably not. So since we're using nightly anyway, let's benefit from it
-#![feature(const_option_ops)]
-#![feature(const_trait_impl)]
-#![feature(const_cmp)]
 #![allow(macro_expanded_macro_exports_accessed_by_absolute_paths)]
 #![allow(clippy::crate_in_macro_def, reason = "clippy bug")]
 //
+#![feature(macro_metavar_expr)]
+#![feature(macro_metavar_expr_concat)]
 #![feature(macro_derive)]
-#![feature(macro_attr)]
 //! `enumwow`
 //!
 //! # Differences from `strum`
@@ -61,8 +59,10 @@ pub mod case_convert;
 #[doc(hidden)]
 pub mod private {
     pub use super::case_convert;
+    pub use super::from_str::EnumVariantData;
     pub use None;
     pub use Some;
+    pub use const_str;
     pub use std::convert::identity;
     pub use str;
     pub use u8;
@@ -105,11 +105,11 @@ macro_rules! define_extract_macro {
         #[doc(hidden)]
         #[macro_export]
         macro_rules! $macro_name {
-            // Entry point. \$_ _ field is the field we're looking for in the list of #[$_ _ attr]ibutes
-            ($_ field:ident: $_ (#[$_ ($_ attr:tt)*])*) => {
+            // Entry point. $_ field is the field we're looking for in the list of #[$_ attr]ibutes
+            ($_($_ Derive:ident)?, $_ field:ident: $_ (#[$_ ($_ attr:tt)*])*) => {
                 $_ (
                     // Try to extract from each individual `#[attr]`
-                    if let $_ crate::private::Some(val) = $_ crate::$macro_name!(@ $_ field: $_ ($_ attr)*) {
+                    if let $_ crate::private::Some(val) = $_ crate::$macro_name!(@ $_($_ Derive:ident)?, $_ field: $_ ($_ attr)*) {
                         $_ crate::private::Some(val)
                     } else
                 )* {
@@ -120,17 +120,17 @@ macro_rules! define_extract_macro {
             //
             // #[zenum(rename_all = "kebab-case")]
             //         ^^^^^^^^^^^^^^^^^^^^^^^^^
-            (@ $_ field:ident: $helper_attr_name($_ ($_ attr:tt)*)) => { $_ crate::$macro_name!(! $_ field: $_ ($_ attr)*) };
+            (@ $_($_ Derive:ident)?, $_ field:ident: $helper_attr_name($_ ($_ attr:tt)*)) => { $_ crate::$macro_name!(! $_ field: $_ ($_ attr)*) };
             // Any other field is totally ignored, e.g. `#[serde(rename_all = "kebab-case")]`
-            (@ $_ field:ident: $_ ($_ ignore:tt)*) => { $_ crate::private::None };
+            (@ $_($_ Derive:ident)?, $_ field:ident: $_ ($_ ignore:tt)*) => { $_ crate::private::None };
             //
             // SUPPORTED FIELDS, AND what we are looking for
             //
             $(
                 // this value is at the start or in the middle of the input
-                (! $value_ident: $value_ident $($value)*, $_ ($_ attr:tt)+) => { $_ crate::private::Some($($captured)*) };
+                (! $_($_ Derive:ident)?, $value_ident: $value_ident $($value)*, $_ ($_ attr:tt)+) => { $_ crate::private::Some($($captured)*) };
                 // this value is at the end of the input
-                (! $value_ident: $value_ident $($value)* $_ (,)?) => { $_ crate::private::Some($($captured)*) };
+                (! $_($_ Derive:ident)?, $value_ident: $value_ident $($value)* $_ (,)?) => { $_ crate::private::Some($($captured)*) };
             )*
             //
             // SUPPORTED FIELDS, not what we are looking for
@@ -187,12 +187,18 @@ define_extract_macro! {$
     match ? in #[zenum(?)] {
         // Rename all to use a specific case convention
         //
-        // Can also use format syntax, i.e. `"hello {}"`
+        // Applies to: `FromStr` and `Display`
+        { rename_all = $case_convention:expr } => { $crate::__case_from_string_literal!($case_convention) }
+        // Append a suffix to all variants
         //
         // Applies to: `FromStr` and `Display`
-        { rename_all = $value:expr } => { $value }
+        { suffix = $suffix:expr } => { $suffix }
+        // Prepend a prefix to all variants
+        //
+        // Applies to: `FromStr` and `Display`
+        { prefix = $prefix:expr } => { $prefix }
         // Whether the comparisons for this enum's variants should be case-insensitive
-        { ascii_case_insensitive } => { () }
+        { case_insensitive } => { () }
     }
 }
 
@@ -230,38 +236,8 @@ define_extract_macro! {$
         // Whether the comparisons for this variant should be case-insensitive
         //
         // Applies to: `FromStr`
-        { ascii_case_insensitive } => { () }
+        { case_insensitive } => { () }
     }
-}
-
-const fn we_have_format_args_at_home(fmt: &'static str, var: &'static str) -> &'static str {
-    const FMT: &str = "Hello, my name is {}!";
-    const VAR: &str = "Dave";
-    ""
-    // const TRY_1: &str = const_format::str_get!(FMT, 0..0).unwrap();
-    // const TRY_2: Option<&str> = const_format::str_get!(FMT, 42..44);
-    // const_format::str_splice_out!(FMT, 0..0, VAR)
-}
-
-/// This is like `format_args!`, but `const`, with these limitations:
-///
-/// - Only a single variable `var` can be interpolated
-/// - Interpolation syntax is `{}`. No other interpolation syntax.
-/// - The `fmt` string can have only a single `{}` (optional)
-///
-/// # Examples
-///
-/// ```
-/// assert_eq!(
-///     we_have_format_args_at_home("hello, my name is {}", "Dave"),
-///     "hello, my name is Dave"
-/// );
-/// ```
-macro_rules! const_format {
-    ($fmt:expr, $var:expr) => {{
-        const TRY_1: &str = const_format::str_get!($fmt, 0..0).unwrap();
-        const_format::str_splice_out!(FMT, 0..0, $var)
-    }};
 }
 
 define_extract_macro! {$
@@ -270,109 +246,48 @@ define_extract_macro! {$
     match ? in #[zenum(?)] {
     }
 }
-#[cfg(false)]
-/// Takes a bunch of attributes, and finds the first field in our helper macro
-///
-/// For example, a valid input to this macro is this:
-///
-/// ```ignore
-/// #[foo]
-/// #[bar]
-/// #[zenum(rename_all = "kebab-case")]
-/// #[baz]
-/// ```
-///
-/// It will then find the first `rename_all` attribute that it finds, and
-/// evaluate to its value, in this case `"kebab-case"`
-//
-// NOTE: We could generate this macro with a macro, to reduce boilerplate when adding new fields
-// but I don't think it would be worth it in terms of readability
-#[doc(hidden)]
-#[macro_export]
-macro_rules! extract_field {
-    // Entry point. $field is the field we're looking for in the list of #[$attr]ibutes
-    ($field:ident: $(#[$($attr:tt)*])*) => {
-        $(
-            // Try to extract from each individual `#[attr]`
-            if let Some(val) = $crate::extract_field!(@ $field: $($attr)*) {
-                Some(val)
-            } else
-        )* {
-            None
-        }
-    };
-    // We only want to parse this part
-    //
-    // #[zenum(rename_all = "kebab-case")]
-    //         ^^^^^^^^^^^^^^^^^^^^^^^^^
-    (@ $field:ident: zenum($($attr:tt)*)) => { $crate::extract_field!(! $field: $($attr)*) };
-    // Any other field is totally ignored, e.g. `#[serde(rename_all = "kebab-case")]`
-    (@ $field:ident: $($ignore:tt)*) => { None };
-    //
-    // SUPPORTED FIELDS, AND what we are looking for
-    //
-    // odd = this value is at the start or in the middle of the input
-    // even = this value is at the end of the input
-    //
-    (! rename_all: rename_all = $value:expr, $($attr:tt)+) => { Some($value) };
-    (! rename_all: rename_all = $value:expr $(,)?) => { Some($value) };
-    (! disabled: disabled, $($attr:tt)+) => { Some(()) };
-    (! disabled: disabled $(,)?) => { Some(()) };
-    (! rename: rename = $value:expr, $($attr:tt)+) => { Some($value) };
-    (! rename: rename = $value:expr $(,)?) => { Some($value) };
-    (! aliases: aliases = $value:expr, $($attr:tt)+) => { Some($value) };
-    (! aliases: aliases = $value:expr $(,)?) => { Some($value) };
-    //
-    // SUPPORTED FIELDS, not what we are looking for
-    //
-    // odd = this value is at the start or in the middle of the input
-    // even = this value is at the end of the input
-    //
-    (! $field:ident: rename_all = $value:expr, $($attr:tt)+) => { $crate::extract_field!(! $field: $($attr)+) };
-    (! $field:ident: rename_all = $value:expr $(,)?) => { None };
-    (! $field:ident: disabled, $($attr:tt)+) => { $crate::extract_field!(! $field: $($attr)*) };
-    (! $field:ident: disabled $(,)?) => { None };
-    (! $field:ident: rename = $value:expr, $($attr:tt)+) => { $crate::extract_field!(! $field: $($attr)+) };
-    (! $field:ident: rename = $value:expr $(,)?) => { None };
-    (! $field:ident: aliases = $value:expr, $($attr:tt)+) => { $crate::extract_field!(! $field: $($attr)+) };
-    (! $field:ident: aliases = $value:expr $(,)?) => { None };
-    //
-    // CATCHALL: if we go here, it's an error. Unrecognized token
-    //
-    (! $field:ident: $ignore:ident $($attr:tt)*) => {
-        compile_error!(concat!(
-            "unexpected token: `",
-            stringify!($ignore),
-            "`, allowed `#[zenum(/* ... */)]` arguments are:\n",
-            "• `rename_all = $_:expr`\n",
-            "• `disabled`\n",
-            "• `rename = $_:expr`\n"
-            "• `aliases = $_:expr`\n"
-        ))
-    };
-}
 
 pub use enumwow_helpers::dummy;
 
-#[derive(Debug, PartialEq, FromStr, dummy)]
-enum Color {
-    Red,
-    // The Default value will be inserted into range if we match "Green".
-    Green {
-        range: usize,
-    },
+/// Rust compiler will complain about `if FOO.is_some() { const { FOO.unwrap() } }` so
+/// we have to do it with a kind of "default" value, even though that value must never actually be reached
+///
+/// In const-eval, all branches are evaluated: even stuff like `if const { false } { panic!() }` will panic
+#[macro_export]
+macro_rules! __hacky_unwrap {
+    ($expr:expr, HACK = $hack:expr) => {{
+        match $expr {
+            Some(expr) => expr,
+            None => $hack,
+        }
+    }};
+}
 
-    // We can match on multiple different patterns.
-    // #[stren(serialize = "blue", serialize = "b")]
-    Blue(usize),
+mod foo {
+    use super::FromStr;
+    use super::dummy;
 
-    // Notice that we can disable certain variants from being found
-    #[zenum(skip)]
-    Yellow,
+    #[derive(Debug, PartialEq, FromStr, dummy)]
+    // #[zenum(rename_all = "lowercase")]
+    enum Color {
+        Red,
+        // The Default value will be inserted into range if we match "Green".
+        Green {
+            range: usize,
+        },
 
-    // We can make the comparison case insensitive (however Unicode is not supported at the moment)
-    // #[stren(ascii_case_insensitive)]
-    Black,
+        // We can match on multiple different patterns.
+        // #[stren(serialize = "blue", serialize = "b")]
+        Blue(usize),
+
+        // Notice that we can disable certain variants from being found
+        #[zenum(skip)]
+        Yellow,
+
+        // We can make the comparison case insensitive (however Unicode is not supported at the moment)
+        // #[stren(ascii_case_insensitive)]
+        Black,
+    }
 }
 
 fn main() {

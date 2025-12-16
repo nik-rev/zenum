@@ -7,4 +7,6 @@ version = "0.0.0-reserved"
 edition = "2024"
 
 [dependencies]
+const-str = "0.7.1"
 enumwow_helpers = { path = "enumwow_helpers", version = "0.1" }
+konst = "0.4.3"

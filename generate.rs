@@ -36,17 +36,11 @@ fn main() -> Result<()> {
 #[strum(serialize_all = "snake_case")]
 enum Marker {
     EnumParse,
-    RenameAll,
 }
 
 impl Marker {
     fn content(self) -> String {
         let content = match self {
-            Self::RenameAll => {
-                r#"
-const STREN_RENAME_ALL: Option<$crate::Case> =
-    $crate::get_macro_helper_value_for_enum!(rename_all: $(#[$($enum_attr)*])*);"#
-            }
             Self::EnumParse => {
                 r#"
 $(#[$($enum_attr:tt)*])*
