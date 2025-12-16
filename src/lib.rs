@@ -52,12 +52,21 @@ mod unwrap_variant;
 mod variant_count;
 mod variant_names;
 
+pub use case_convert::Case;
+
+#[doc(hidden)]
+pub mod case_convert;
+
 // Not public API.
 #[doc(hidden)]
 pub mod private {
+    pub use super::case_convert;
     pub use None;
     pub use Some;
-    pub use const_format;
+    pub use std::convert::identity;
+    pub use str;
+    pub use u8;
+    pub use usize;
 }
 
 /// A meta-macro that generates an attribute parsing macro (like `extract_field`).
@@ -149,17 +158,118 @@ macro_rules! define_extract_macro {
     };
 }
 
+#[macro_export]
+macro_rules! unwrap_or {
+    ($unwrap:expr, $or:expr) => {
+        $unwrap
+    };
+    (, $or:expr) => {
+        $or
+    };
+}
+
+// #[derive(zenum::FromStr)]
+// #[derive(zenum::Display)]
+//
+// #[derive(zenum::VARIANT_COUNT)]
+// #[derive(zenum::VARIANT_NAMES)]
+// #[derive(zenum::VARIANTS)]
+//
+// #[derive(zenum::unwrap)]: generates `unwrap_*` for each variant
+// #[derive(zenum::expect)]: generates `expect_*` for each variant
+// #[derive(zenum::is)]: generates `is_*` for each variant
+// #[derive(zenum::as_)]: generates `as_*` for each variant
+// #[derive(zenum::map)]: generates `map_*` for each variant
+
 define_extract_macro! {$
-    macro_rules! extract_field;
+    macro_rules! get_macro_helper_value_for_enum;
 
     match ? in #[zenum(?)] {
+        // Rename all to use a specific case convention
+        //
+        // Can also use format syntax, i.e. `"hello {}"`
+        //
+        // Applies to: `FromStr` and `Display`
         { rename_all = $value:expr } => { $value }
-        { disabled } => { () }
-        { rename = $value:expr } => { $value }
-        { aliases = $value:expr } => { $value }
+        // Whether the comparisons for this enum's variants should be case-insensitive
+        { ascii_case_insensitive } => { () }
     }
 }
 
+define_extract_macro! {$
+    macro_rules! get_macro_helper_value_for_variant;
+
+    match ? in #[zenum(?)] {
+        // if any other branches fail then this variant will be filled
+        //
+        // Applies to: `FromStr`
+        { default } => { () }
+        // Inner field's implementation should be used
+        //
+        // Works only on variants with a single field
+        //
+        // Applies to: `FromStr` and `Display`
+        { transparent } => { () }
+        // Removes variant from the generated code.
+        //
+        // TODO: allow passing identifier of the current macro
+        //       to specify list to skip
+        //
+        // Applies to: Everything, but individual can be skipped e.g. `skip(FromStr, Display)`
+        { skip } => { () }
+        // Use this name when serializing/deserializing this variant
+        //
+        // Applies to: `FromStr` and `Display`
+        { rename = $value:expr } => { $value }
+        // This also allows these values to map to the variant.
+        //
+        // Must be a list of strings
+        //
+        // Applies to: `FromStr`
+        { aliases = $value:expr } => { $value }
+        // Whether the comparisons for this variant should be case-insensitive
+        //
+        // Applies to: `FromStr`
+        { ascii_case_insensitive } => { () }
+    }
+}
+
+const fn we_have_format_args_at_home(fmt: &'static str, var: &'static str) -> &'static str {
+    const FMT: &str = "Hello, my name is {}!";
+    const VAR: &str = "Dave";
+    ""
+    // const TRY_1: &str = const_format::str_get!(FMT, 0..0).unwrap();
+    // const TRY_2: Option<&str> = const_format::str_get!(FMT, 42..44);
+    // const_format::str_splice_out!(FMT, 0..0, VAR)
+}
+
+/// This is like `format_args!`, but `const`, with these limitations:
+///
+/// - Only a single variable `var` can be interpolated
+/// - Interpolation syntax is `{}`. No other interpolation syntax.
+/// - The `fmt` string can have only a single `{}` (optional)
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(
+///     we_have_format_args_at_home("hello, my name is {}", "Dave"),
+///     "hello, my name is Dave"
+/// );
+/// ```
+macro_rules! const_format {
+    ($fmt:expr, $var:expr) => {{
+        const TRY_1: &str = const_format::str_get!($fmt, 0..0).unwrap();
+        const_format::str_splice_out!(FMT, 0..0, $var)
+    }};
+}
+
+define_extract_macro! {$
+    macro_rules! helper_value_field;
+
+    match ? in #[zenum(?)] {
+    }
+}
 #[cfg(false)]
 /// Takes a bunch of attributes, and finds the first field in our helper macro
 ///
@@ -257,7 +367,7 @@ enum Color {
     Blue(usize),
 
     // Notice that we can disable certain variants from being found
-    #[zenum(disabled)]
+    #[zenum(skip)]
     Yellow,
 
     // We can make the comparison case insensitive (however Unicode is not supported at the moment)

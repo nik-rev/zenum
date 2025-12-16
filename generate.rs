@@ -44,20 +44,8 @@ impl Marker {
         let content = match self {
             Self::RenameAll => {
                 r#"
-const STREN_RENAME_ALL: Option<$crate::private::const_format::Case> = {
-    match $crate::extract_field!(rename_all: $(#[$($enum_attr)*])*) {
-        Some("lowercase") => Some($crate::private::const_format::Case::Lower),
-        Some("UPPERCASE") => Some($crate::private::const_format::Case::Upper),
-        Some("PascalCase") => Some($crate::private::const_format::Case::Pascal),
-        Some("camelCase") => Some($crate::private::const_format::Case::Camel),
-        Some("snake_case") => Some($crate::private::const_format::Case::Snake),
-        Some("SCREAMING_SNAKE_CASE") => Some($crate::private::const_format::Case::UpperSnake),
-        Some("kebab-case") => Some($crate::private::const_format::Case::Kebab),
-        Some("SCREAMING-KEBAB-CASE") => Some($crate::private::const_format::Case::UpperKebab),
-        Some(unknown) => panic!("invalid value for `#[stren(rename_all_fields)]`"),
-        None => None
-    }
-};"#
+const STREN_RENAME_ALL: Option<$crate::Case> =
+    $crate::get_macro_helper_value_for_enum!(rename_all: $(#[$($enum_attr)*])*);"#
             }
             Self::EnumParse => {
                 r#"
